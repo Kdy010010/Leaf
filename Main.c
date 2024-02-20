@@ -1,49 +1,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <dirent.h> // for directory handling
+#include <sys/stat.h> // mkdir 함수 사용을 위한 헤더
 
-// Leaf 언어 트랜스파일러
+// 어셈블리 코드 변환 및 프로젝트 생성을 위한 함수들
 char* transpile_leaf_to_asm(const char* leaf_code);
-
-// Leaf 프로젝트 생성 및 Leaf 코드 컴파일
 char* create_leaf_project(const char* project_name, const char* leaf_code);
-
-// Resolve import statement and include imported code
-char* resolve_and_include_import(const char* import_statement);
+void process_include_directive(char* asm_code, const char* filename);
 
 int main() {
-    // Leaf 프로젝트 이름을 입력받음
     char project_name[50];
-    printf("새 Leaf 프로젝트 이름을 입력하세요: ");
-    scanf("%s", project_name);
+    printf("Enter new Leaf project name: ");
+    scanf("%49s", project_name);
 
-    // Leaf 파일 읽기
     char leaf_file_path[100];
-    printf("Leaf 파일 경로를 입력하세요: ");
-    scanf("%s", leaf_file_path);
+    printf("Enter Leaf file path: ");
+    scanf("%99s", leaf_file_path);
 
-    // Leaf 파일 열기
     FILE* leaf_file = fopen(leaf_file_path, "r");
-    if (leaf_file == NULL) {
-        printf("Leaf 파일을 열 수 없습니다.\n");
+    if (!leaf_file) {
+        printf("Cannot open Leaf file.\n");
         return 1;
     }
 
-    // Leaf 코드 읽기
     fseek(leaf_file, 0, SEEK_END);
     long leaf_file_size = ftell(leaf_file);
     fseek(leaf_file, 0, SEEK_SET);
-    char* leaf_code = (char*)malloc((leaf_file_size + 1) * sizeof(char));
-    fread(leaf_code, sizeof(char), leaf_file_size, leaf_file);
-    leaf_code[leaf_file_size] = '\0'; // Null-terminate the string
+    char* leaf_code = (char*)malloc(leaf_file_size + 1);
+    fread(leaf_code, 1, leaf_file_size, leaf_file);
+    leaf_code[leaf_file_size] = '\0';
     fclose(leaf_file);
 
-    // Leaf 프로젝트 생성 및 컴파일
     char* project_dir = create_leaf_project(project_name, leaf_code);
-    printf("Leaf 프로젝트가 생성되었습니다. 프로젝트 디렉토리: %s\n", project_dir);
+    printf("Leaf project created. Project directory: %s\n", project_dir);
 
-    // Free allocated memory
     free(leaf_code);
     free(project_dir);
 
@@ -51,78 +41,70 @@ int main() {
 }
 
 char* transpile_leaf_to_asm(const char* leaf_code) {
-    char* asm_code = (char*)malloc(1000 * sizeof(char)); // Allocate memory for assembly code
-    asm_code[0] = '\0'; // Initialize as an empty string
+    char* asm_code = (char*)malloc(10000);
+    asm_code[0] = '\0';
 
-    // 변수명에 대한 카운터 초기화
-    int var_count = 0;
-
-    // Leaf 코드를 줄 단위로 분할
-    char* line;
-    line = strtok((char*)leaf_code, "\n");
-
-    // 각 줄에 대해 반복
-    while (line != NULL) {
-        // import 문장인지 확인
-        if (strncmp(line, "import ", 7) == 0) {
-            // Resolve and include imported code
-            char* imported_code = resolve_and_include_import(line + 7);
-            strcat(asm_code, imported_code);
-            free(imported_code);
+    char* line = strtok((char*)leaf_code, "\n");
+    while (line) {
+        if (strncmp(line, "include ", 8) == 0) {
+            char* filename = line + 8;
+            process_include_directive(asm_code, filename);
         } else {
-            // 나머지 코드 변환 처리...
+            // Example of adding mock translation for non-include lines
+            strcat(asm_code, "; Mock translation of Leaf code line\n");
         }
-
-        var_count++;
         line = strtok(NULL, "\n");
     }
 
     return asm_code;
 }
 
-char* resolve_and_include_import(const char* import_statement) {
-    // Extract module name from import statement
-    char* module_name = strtok(import_statement, " ;");
+char* create_leaf_project(const char* project_name, const char* leaf_code) {
+    char* project_dir = (char*)malloc(256);
+    sprintf(project_dir, "./%s", project_name);
+    mkdir(project_dir, 0777);
 
-    // Resolve module name to file path (e.g., search directories, etc.)
-    // For demonstration purposes, let's assume modules are stored in a "modules" directory
-    char module_path[100];
-    sprintf(module_path, "modules/%s.leaf", module_name);
-
-    // Read the content of the module file
-    FILE* module_file = fopen(module_path, "r");
-    if (module_file == NULL) {
-        printf("Error: Failed to open module file '%s'\n", module_path);
+    char* asm_code = transpile_leaf_to_asm(leaf_code);
+    char asm_file_path[256];
+    sprintf(asm_file_path, "%s/%s.asm", project_dir, project_name);
+    FILE* asm_file = fopen(asm_file_path, "w");
+    if (asm_file) {
+        fputs(asm_code, asm_file);
+        fclose(asm_file);
+    } else {
+        printf("Failed to write the assembly file.\n");
+        free(asm_code);
+        free(project_dir);
         exit(1);
     }
 
-    // Read the content of the module file
-    fseek(module_file, 0, SEEK_END);
-    long module_file_size = ftell(module_file);
-    fseek(module_file, 0, SEEK_SET);
-    char* module_code = (char*)malloc((module_file_size + 1) * sizeof(char));
-    fread(module_code, sizeof(char), module_file_size, module_file);
-    module_code[module_file_size] = '\0'; // Null-terminate the string
-    fclose(module_file);
-
-    return module_code;
+    free(asm_code);
+    return project_dir;
 }
 
-char* create_leaf_project(const char* project_name, const char* leaf_code) {
-    // Leaf 프로젝트 디렉토리 생성
-    char* project_dir = (char*)malloc(100 * sizeof(char)); // Allocate memory for project directory path
-    sprintf(project_dir, "%s", project_name); // Copy project name as directory path
-    mkdir(project_dir, 0777); // Create directory
+void process_include_directive(char* asm_code, const char* filename) {
+    char file_path[256];
+    sprintf(file_path, "module/%s", filename);
 
-    // Leaf 코드를 어셈블리로 변환
-    char* asm_code = transpile_leaf_to_asm(leaf_code);
+    FILE* file = fopen(file_path, "r");
+    if (!file) {
+        fprintf(stderr, "Error: Cannot open included file '%s'\n", file_path);
+        exit(1);
+    }
 
-    // 어셈블리 코드를 Leaf 프로젝트 디렉토리에 저장
-    char asm_file_path[100];
-    sprintf(asm_file_path, "%s/%s.asm", project_dir, project_name);
-    FILE* asm_file = fopen(asm_file_path, "w");
-    fprintf(asm_file, "%s", asm_code);
-    fclose(asm_file);
+    fseek(file, 0, SEEK_END);
+    long filesize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char* file_contents = (char*)malloc(filesize + 1);
+    fread(file_contents, 1, filesize, file);
+    file_contents[filesize] = '\0';
 
-    return project_dir;
+    strcat(asm_code, "\n; Begin included ASM file: ");
+    strcat(asm_code, filename);
+    strcat(asm_code, "\n");
+    strcat(asm_code, file_contents);
+    strcat(asm_code, "\n; End included ASM file\n");
+
+    fclose(file);
+    free(file_contents);
 }
